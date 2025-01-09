@@ -106,7 +106,7 @@ export default function OptimizePage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer sk-7e369c68994443ab8c169d8d3612ee8e`
+          "Authorization": `Bearer ${process.env.NEXT_PUBLIC_DEEPSEEK_API_KEY}`
         },
         body: JSON.stringify({
           model: "deepseek-chat",
@@ -351,7 +351,7 @@ export default function OptimizePage() {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer sk-7e369c68994443ab8c169d8d3612ee8e`
+            "Authorization": `Bearer ${process.env.NEXT_PUBLIC_DEEPSEEK_API_KEY}`
           },
           body: JSON.stringify({
             model: "deepseek-chat",
@@ -506,7 +506,7 @@ export default function OptimizePage() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer sk-7e369c68994443ab8c169d8d3612ee8e`
+          "Authorization": `Bearer ${process.env.NEXT_PUBLIC_DEEPSEEK_API_KEY}`
         },
         body: JSON.stringify({
           model: "deepseek-chat",
