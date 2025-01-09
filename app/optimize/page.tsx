@@ -3,11 +3,19 @@
 import { IterateDialog } from "@/components/iterate-dialog"
 import { Button } from "@/components/ui/button"
 import {
+<<<<<<< HEAD
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue
+=======
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue
+>>>>>>> 1a40ec59bf9b0ba74af243ed9fc527087ed624ec
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/use-toast"
@@ -322,6 +330,10 @@ export default function OptimizePage() {
       setIsLoading(true)
       setTestResult(null)
       
+<<<<<<< HEAD
+=======
+      let fullContent = ""
+>>>>>>> 1a40ec59bf9b0ba74af243ed9fc527087ed624ec
       let updateTimeout: NodeJS.Timeout | null = null
       let contentBuffer = ""
       let lastUpdateTime = Date.now()
@@ -380,7 +392,14 @@ export default function OptimizePage() {
         while (reader) {
           const { done, value } = await reader.read()
           if (done) {
+<<<<<<< HEAD
             updateTestResult(contentBuffer, true)
+=======
+            if (contentBuffer) {
+              fullContent += contentBuffer
+              updateTestResult(fullContent, true)
+            }
+>>>>>>> 1a40ec59bf9b0ba74af243ed9fc527087ed624ec
             break
           }
 
@@ -398,7 +417,12 @@ export default function OptimizePage() {
                 const content = json.choices[0]?.delta?.content || ''
                 if (content) {
                   contentBuffer += content
+<<<<<<< HEAD
                   updateTestResult(contentBuffer)
+=======
+                  fullContent += content
+                  updateTestResult(fullContent)
+>>>>>>> 1a40ec59bf9b0ba74af243ed9fc527087ed624ec
                 }
               } catch (e) {
                 console.error('Error parsing SSE message:', e)
@@ -412,6 +436,7 @@ export default function OptimizePage() {
           result = await callGeminiFlash(editedContent, testInput)
         } else {
           result = await callGemini(editedContent, testInput)
+<<<<<<< HEAD
         }
       
         setTestResult({
@@ -419,6 +444,15 @@ export default function OptimizePage() {
           output: result,
           model: model
         })
+=======
+      }
+      
+      setTestResult({
+        input: testInput,
+        output: result,
+        model: model
+      })
+>>>>>>> 1a40ec59bf9b0ba74af243ed9fc527087ed624ec
       }
     } catch (error: unknown) {
       const errorMessage = error instanceof Error 
