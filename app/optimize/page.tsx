@@ -11,204 +11,300 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/use-toast"
-import { callDeepseek, callGemini, callGeminiFlash } from "@/lib/api"
-import { getLocalStorage, setLocalStorage } from '@/lib/utils'
+import { callGemini, callGeminiFlash } from "@/lib/api"
+import { getLocalStorage } from '@/lib/utils'
 import type { OptimizedPrompt, TestResult } from '@/types/prompt'
-import { ArrowRightIcon, Check, CopyIcon, Loader2, Play, Sparkles, Zap, PlusCircle } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { ArrowRightIcon, CopyIcon, Loader2, Play, PlusCircle, Zap } from 'lucide-react'
 import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
 
 export default function OptimizePage() {
   const router = useRouter()
+  const [streamContent, setStreamContent] = useState("")
   const [promptHistory, setPromptHistory] = useState<OptimizedPrompt[]>([])
+  const [isOptimizing, setIsOptimizing] = useState(true)
+  const [testInput, setTestInput] = useState("")
+  const [testResult, setTestResult] = useState<TestResult | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [model, setModel] = useState("deepseek-v3")
+  const [isIterateDialogOpen, setIsIterateDialogOpen] = useState(false)
+  const [isIterating, setIsIterating] = useState(false)
+  const [editedContent, setEditedContent] = useState("")
+  const [currentVersion, setCurrentVersion] = useState(1)
+  const VERSIONS_PER_PAGE = 5 // 每页显示的版本数
+  const [currentPage, setCurrentPage] = useState(1)
+  const VISIBLE_VERSIONS = 3 // 一次显示3个版本
+  const [startVersion, setStartVersion] = useState(1)
+
+  // 计算总页数
+  const totalPages = Math.ceil(promptHistory.length / VERSIONS_PER_PAGE)
+
+  // 获取当前页的版本
+  const getCurrentPageVersions = () => {
+    const start = (currentPage - 1) * VERSIONS_PER_PAGE
+    const end = start + VERSIONS_PER_PAGE
+    return promptHistory.slice(start, end)
+  }
+
+  // 计算当前可见的版本
+  const getVisibleVersions = () => {
+    const versions = []
+    for (let i = startVersion; i < startVersion + VISIBLE_VERSIONS && i <= promptHistory.length; i++) {
+      versions.push(i)
+    }
+    return versions
+  }
   
   useEffect(() => {
-    const saved = getLocalStorage('optimizedPrompt')
-    if (saved) {
+    const savedHistory = localStorage.getItem('optimizedPromptHistory')
+    if (savedHistory) {
       try {
-        setPromptHistory([JSON.parse(saved)])
+        const parsedHistory = JSON.parse(savedHistory)
+        setPromptHistory(parsedHistory)
+        setCurrentVersion(parsedHistory.length)
+        setEditedContent(parsedHistory[parsedHistory.length - 1].content)
+      } catch (error) {
+        console.error('Error parsing prompt history:', error)
+      }
+    } else {
+      const saved = getLocalStorage('optimizedPrompt')
+      if (saved) {
+        try {
+          const parsed = JSON.parse(saved)
+          setPromptHistory([parsed])
+          setCurrentVersion(1)
+          
+          if (!parsed.content) {
+            startOptimize(parsed.originalPrompt)
+          } else {
+            setStreamContent(parsed.content)
+            setEditedContent(parsed.content)
+            setIsOptimizing(false)
+          }
       } catch (error) {
         console.error('Error parsing saved prompt:', error)
+        }
       }
     }
   }, [])
   
-  const [currentVersion, setCurrentVersion] = useState(1)
-  
-  const prompt = promptHistory[currentVersion - 1] || {
-    content: "",
-    originalPrompt: "",
+  useEffect(() => {
+    setEditedContent(streamContent)
+  }, [streamContent])
+
+  const shouldUpdate = (lastTime: number) => {
+    const now = Date.now()
+    if (now - lastTime >= 200) {
+      return [true, now] as const
+    }
+    return [false, lastTime] as const
+  }
+
+  const startOptimize = async (originalPrompt: string) => {
+    try {
+      const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer sk-7e369c68994443ab8c169d8d3612ee8e`
+        },
+        body: JSON.stringify({
+          model: "deepseek-chat",
+          messages: [
+            {
+              role: "system",
+              content: `你是一个专业的AI提示词优化专家。请帮我优化以下prompt，并按照以下格式返回：
+
+# Role: [角色名称]
+
+## Profile
+- language: [语言]
+- description: [详细的角色描述]
+- background: [角色背景]
+- personality: [性格特征]
+- expertise: [专业领域]
+- target_audience: [目标用户群]
+
+## Skills
+
+1. [核心技能类别 1]
+   - [具体技能]: [简要说明]
+   - [具体技能]: [简要说明]
+   - [具体技能]: [简要说明]
+   - [具体技能]: [简要说明]
+
+2. [核心技能类别 2]
+   - [具体技能]: [简要说明]
+   - [具体技能]: [简要说明]
+   - [具体技能]: [简要说明]
+   - [具体技能]: [简要说明]
+
+3. [辅助技能类别]
+   - [具体技能]: [简要说明]
+   - [具体技能]: [简要说明]
+   - [具体技能]: [简要说明]
+   - [具体技能]: [简要说明]
+
+## Rules
+
+1. [基本原则]：
+   - [具体规则]: [详细说明]
+   - [具体规则]: [详细说明]
+   - [具体规则]: [详细说明]
+   - [具体规则]: [详细说明]
+
+2. [行为准则]：
+   - [具体规则]: [详细说明]
+   - [具体规则]: [详细说明]
+   - [具体规则]: [详细说明]
+   - [具体规则]: [详细说明]
+
+3. [限制条件]：
+   - [具体限制]: [详细说明]
+   - [具体限制]: [详细说明]
+   - [具体限制]: [详细说明]
+   - [具体限制]: [详细说明]
+
+## Workflows
+
+1. [主要工作流程 1]
+   - 目标: [明确目标]
+   - 步骤 1: [详细说明]
+   - 步骤 2: [详细说明]
+   - 步骤 3: [详细说明]
+   - 预期结果: [说明]
+
+2. [主要工作流程 2]
+   - 目标: [明确目标]
+   - 步骤 1: [详细说明]
+   - 步骤 2: [详细说明]
+   - 步骤 3: [详细说明]
+   - 预期结果: [说明]
+
+请基于以上模板，优化并扩展以下prompt，确保内容专业、完整且结构清晰：`
+            },
+            {
+              role: "user", 
+              content: originalPrompt
+            }
+          ],
+          stream: true,
+          temperature: 0.7,
+          max_tokens: 2000
+        })
+      })
+
+      if (!response.ok) throw new Error('优化请求失败')
+
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ""
+      let fullContent = ""
+      let updateTimeout: NodeJS.Timeout | null = null
+      let contentBuffer = ""
+      let lastUpdateTime = Date.now()
+
+      const cleanContent = (content: string) => {
+        content = content.replace(/\n{3,}/g, '\n\n')
+        
+        const sections = new Map()
+        const processedLines = new Set()
+        const lines = content.split('\n')
+        const cleanedLines = lines.filter(line => {
+          if (!line.trim()) return true
+          
+          if (line.startsWith('# Role:') || 
+              line.startsWith('## Profile') ||
+              line.startsWith('## Skills') ||
+              line.startsWith('## Rules') ||
+              line.startsWith('## Workflows')) {
+            if (sections.has(line)) return false
+            sections.set(line, true)
+            return true
+          }
+          
+          if (processedLines.has(line)) return false
+          processedLines.add(line)
+          return true
+        })
+
+        return cleanedLines.join('\n')
+      }
+
+      const updateContent = (content: string, force = false) => {
+        if (!force) {
+          const [should, newTime] = shouldUpdate(lastUpdateTime)
+          if (!should) return
+          lastUpdateTime = newTime
+        }
+
+        if (updateTimeout) {
+          clearTimeout(updateTimeout)
+        }
+
+        updateTimeout = setTimeout(() => {
+          const cleanedContent = cleanContent(content)
+          setStreamContent(cleanedContent)
+        }, 200)
+      }
+
+      while (reader) {
+        const { done, value } = await reader.read()
+        if (done) {
+          if (contentBuffer) {
+            fullContent += contentBuffer
+            updateContent(fullContent, true)
+          }
+          break
+        }
+
+        buffer += decoder.decode(value, { stream: true })
+        const chunks = buffer.split('\n')
+        buffer = chunks.pop() || ''
+
+        for (const chunk of chunks) {
+          if (chunk.startsWith('data: ')) {
+            const data = chunk.slice(6)
+            if (data === '[DONE]') break
+
+            try {
+              const json = JSON.parse(data)
+              const content = json.choices[0]?.delta?.content || ''
+              if (content) {
+                contentBuffer += content
+                
+                if (contentBuffer.length >= 100 || 
+                    contentBuffer.includes('\n\n') || 
+                    contentBuffer.includes('## ') || 
+                    contentBuffer.includes('# ')) {
+                  fullContent += contentBuffer
+                  setStreamContent(fullContent)
+                  contentBuffer = ""
+                }
+              }
+            } catch (e) {
+              console.error('Error parsing SSE message:', e)
+            }
+          }
+        }
+      }
+
+      if (updateTimeout) {
+        clearTimeout(updateTimeout)
+      }
+
+      const finalContent = cleanContent(fullContent)
+      setStreamContent(finalContent)
+
+      const optimizedPrompt = {
+        content: finalContent,
+        originalPrompt: originalPrompt,
     version: 1
   }
 
-  const [testInput, setTestInput] = useState("")
-  const [testResult, setTestResult] = useState<TestResult | null>(null)
-  const [isIterating, setIsIterating] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
-  const [model, setModel] = useState("deepseek-v3")
-  const [isIterateDialogOpen, setIsIterateDialogOpen] = useState(false)
-  const [editedContent, setEditedContent] = useState("")
-  const [isOptimizing, setIsOptimizing] = useState(false)
+      setPromptHistory([optimizedPrompt])
+      localStorage.setItem('optimizedPrompt', JSON.stringify(optimizedPrompt))
 
-  const saveHistory = (history: OptimizedPrompt[]) => {
-    setPromptHistory(history)
-    setLocalStorage('optimizedPromptHistory', JSON.stringify(history))
-  }
-
-  const handleTest = async () => {
-    try {
-      setIsLoading(true)
-      
-      let result
-      switch (model) {
-        case "deepseek-v3":
-          result = await callDeepseek(prompt.content, testInput)
-          break
-        case "gemini-2.0-flash-exp":
-          result = await callGeminiFlash(prompt.content, testInput)
-          break
-        case "gemini-1206":
-          result = await callGemini(prompt.content, testInput)
-          break
-        default:
-          throw new Error("未知的模型类型")
-      }
-      
-      setTestResult({
-        input: testInput,
-        output: result,
-        model: model
-      })
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error 
-        ? error.message 
-        : '发生未知错误'
-      
-      toast({
-        title: "错误",
-        description: errorMessage,
-        variant: "destructive"
-      })
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleIterate = async (feedback: string) => {
-    try {
-      setIsIterating(true)
-      
-      const systemPrompt = `你是一个专业的AI提示词优化专家。请根据以下反馈优化prompt：
-
-当前prompt:
-${prompt.content}
-
-用户反馈：
-${feedback}
-
-请基于用户的反馈，生成一个改进后的prompt，保持相同的格式结构，但针对性地解决用户提出的问题。`
-
-      let result
-      switch (model) {
-        case "deepseek-v3":
-          result = await callDeepseek(systemPrompt, "")
-          break
-        case "gemini-2.0-flash-exp":
-          result = await callGeminiFlash(systemPrompt, "")
-          break
-        case "gemini-1206":
-          result = await callGemini(systemPrompt, "")
-          break
-        default:
-          throw new Error("未知的模型类型")
-      }
-
-      const newVersion = {
-        content: result,
-        originalPrompt: prompt.originalPrompt,
-        version: promptHistory.length + 1
-      }
-
-      const newHistory = [...promptHistory, newVersion]
-      saveHistory(newHistory)
-      setCurrentVersion(newVersion.version)
-      setIsIterateDialogOpen(false)
-
-      toast({
-        title: "迭代成功",
-        description: `已生成第 ${newVersion.version} 个版本`
-      })
-    } catch (error: unknown) {
-      const errorMessage = error instanceof Error 
-        ? error.message 
-        : '发生未知错误'
-      
-      toast({
-        title: "迭代失败",
-        description: errorMessage,
-        variant: "destructive"
-      })
-    } finally {
-      setIsIterating(false)
-    }
-  }
-
-  const copyToClipboard = async (text: string) => {
-    try {
-      if (navigator.clipboard && window.isSecureContext) {
-        await navigator.clipboard.writeText(text)
-        return true
-      }
-
-      const textArea = document.createElement('textarea')
-      textArea.value = text
-      textArea.style.position = 'fixed'
-      textArea.style.left = '-999999px'
-      textArea.style.top = '-999999px'
-      document.body.appendChild(textArea)
-      textArea.focus()
-      textArea.select()
-      
-      try {
-        document.execCommand('copy')
-        textArea.remove()
-        return true
-      } catch (error) {
-        textArea.remove()
-        return false
-      }
-    } catch (error) {
-      return false
-    }
-  }
-
-  const handleOptimize = async () => {
-    setIsOptimizing(true)
-    try {
-      const optimizedPrompt = await callDeepseek(
-        "你是一个提示词优化专家。你需要帮助用户优化他们的提示词，使其更加清晰、具体和有效。",
-        `请帮我优化以下提示词，使其更加清晰和有效：\n\n${prompt.content}`
-      )
-      
-      setPromptHistory([
-        {
-          content: optimizedPrompt,
-          originalPrompt: prompt.content,
-          version: promptHistory.length + 1
-        },
-        ...promptHistory
-      ])
-      
-      localStorage.setItem('optimizedPrompt', JSON.stringify({
-        content: optimizedPrompt,
-        originalPrompt: prompt.content,
-        version: promptHistory.length + 1
-      }))
-      
-      toast({
-        title: "优化成功",
-        description: "提示词已经过优化"
-      })
     } catch (error) {
       console.error(error)
       toast({
@@ -221,10 +317,358 @@ ${feedback}
     }
   }
 
+  const handleTest = async () => {
+    try {
+      setIsLoading(true)
+      setTestResult(null)
+      
+      let fullContent = ""
+      let updateTimeout: NodeJS.Timeout | null = null
+      let contentBuffer = ""
+      let lastUpdateTime = Date.now()
+
+      const updateTestResult = (content: string, force = false) => {
+        if (!force) {
+          const [should, newTime] = shouldUpdate(lastUpdateTime)
+          if (!should) return
+          lastUpdateTime = newTime
+        }
+
+        if (updateTimeout) {
+          clearTimeout(updateTimeout)
+        }
+
+        updateTimeout = setTimeout(() => {
+          setTestResult(prev => ({
+            input: testInput,
+            output: content,
+            model: model
+          }))
+        }, 200)
+      }
+
+      if (model === "deepseek-v3") {
+        const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer sk-7e369c68994443ab8c169d8d3612ee8e`
+          },
+          body: JSON.stringify({
+            model: "deepseek-chat",
+            messages: [
+              {
+                role: "system",
+                content: editedContent
+              },
+              {
+                role: "user", 
+                content: testInput
+              }
+            ],
+            stream: true,
+            temperature: 0.7,
+            max_tokens: 2000
+          })
+        })
+
+        if (!response.ok) throw new Error('测试请求失败')
+
+        const reader = response.body?.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ""
+
+        while (reader) {
+          const { done, value } = await reader.read()
+          if (done) {
+            if (contentBuffer) {
+              fullContent += contentBuffer
+              updateTestResult(fullContent, true)
+            }
+            break
+          }
+
+          buffer += decoder.decode(value, { stream: true })
+          const chunks = buffer.split('\n')
+          buffer = chunks.pop() || ''
+
+          for (const chunk of chunks) {
+            if (chunk.startsWith('data: ')) {
+              const data = chunk.slice(6)
+              if (data === '[DONE]') break
+
+              try {
+                const json = JSON.parse(data)
+                const content = json.choices[0]?.delta?.content || ''
+                if (content) {
+                  contentBuffer += content
+                  fullContent += content
+                  updateTestResult(fullContent)
+                }
+              } catch (e) {
+                console.error('Error parsing SSE message:', e)
+              }
+            }
+          }
+        }
+      } else {
+        let result
+        if (model === "gemini-2.0-flash-exp") {
+          result = await callGeminiFlash(editedContent, testInput)
+        } else {
+          result = await callGemini(editedContent, testInput)
+      }
+      
+      setTestResult({
+        input: testInput,
+        output: result,
+        model: model
+      })
+      }
+    } catch (error: unknown) {
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : '发生未知错误'
+      
+      toast({
+        title: "测试失败",
+        description: errorMessage,
+        variant: "destructive"
+      })
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const handleNewProject = () => {
     localStorage.removeItem('optimizedPrompt')
     localStorage.removeItem('optimizedPromptHistory')
     router.push('/')
+  }
+
+  const handleCopy = async () => {
+    try {
+      const contentToCopy = editedContent || streamContent
+
+      if (!contentToCopy.trim()) {
+      toast({
+          title: "复制失败",
+          description: "没有可复制的内容",
+        variant: "destructive"
+      })
+        return
+      }
+
+      // 创建一个临时文本区域
+      const textarea = document.createElement('textarea')
+      textarea.value = contentToCopy
+      textarea.style.position = 'fixed'
+      textarea.style.left = '-9999px'
+      document.body.appendChild(textarea)
+      
+      try {
+        // 选择并复制文本
+        textarea.select()
+        document.execCommand('copy')
+        toast({
+          title: "复制成功",
+          description: "已复制到剪贴板"
+        })
+      } catch (err) {
+        console.error('Fallback copy error:', err)
+        toast({
+          title: "复制失败",
+          description: "请手动复制",
+          variant: "destructive"
+        })
+      } finally {
+        // 清理临时元素
+        document.body.removeChild(textarea)
+      }
+    } catch (error) {
+      console.error('Copy error:', error)
+      toast({
+        title: "复制失败",
+        description: "请手动复制",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleIterate = async (feedback: string) => {
+    try {
+      setIsIterateDialogOpen(false)
+      
+      setIsIterating(true)
+      setStreamContent("")
+      setTestResult(null)
+      setTestInput("")
+
+      const optimizedSection = document.querySelector('.optimized-prompt-section')
+      optimizedSection?.scrollIntoView({ behavior: 'smooth' })
+
+      const response = await fetch("https://api.deepseek.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer sk-7e369c68994443ab8c169d8d3612ee8e`
+        },
+        body: JSON.stringify({
+          model: "deepseek-chat",
+          messages: [
+            {
+              role: "system",
+              content: `你是一个专业的AI提示词优化专家。请根据用户的要求优化以下prompt：
+
+当前prompt:
+${editedContent}
+
+用户的优化要求:
+${feedback}
+
+请基于用户的要求优化prompt，返回格式不变。`
+            },
+            {
+              role: "user",
+              content: "请根据以上要求优化prompt。"
+            }
+          ],
+          stream: true,
+          temperature: 0.7,
+          max_tokens: 2000
+        })
+      })
+
+      if (!response.ok) throw new Error('迭代请求失败')
+
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ""
+      let fullContent = ""
+      let updateTimeout: NodeJS.Timeout | null = null
+      let contentBuffer = ""
+      let lastUpdateTime = Date.now()
+
+      const cleanContent = (content: string) => {
+        content = content.replace(/\n{3,}/g, '\n\n')
+        
+        const sections = new Map()
+        const processedLines = new Set()
+        const lines = content.split('\n')
+        const cleanedLines = lines.filter(line => {
+          if (!line.trim()) return true
+          
+          if (line.startsWith('# Role:') || 
+              line.startsWith('## Profile') ||
+              line.startsWith('## Skills') ||
+              line.startsWith('## Rules') ||
+              line.startsWith('## Workflows')) {
+            if (sections.has(line)) return false
+            sections.set(line, true)
+            return true
+          }
+          
+          if (processedLines.has(line)) return false
+          processedLines.add(line)
+          return true
+        })
+
+        return cleanedLines.join('\n')
+      }
+
+      const updateContent = (content: string, force = false) => {
+        if (!force) {
+          const [should, newTime] = shouldUpdate(lastUpdateTime)
+          if (!should) return
+          lastUpdateTime = newTime
+        }
+
+        if (updateTimeout) {
+          clearTimeout(updateTimeout)
+        }
+
+        updateTimeout = setTimeout(() => {
+          const cleanedContent = cleanContent(content)
+          setStreamContent(cleanedContent)
+        }, 200)
+      }
+
+      while (reader) {
+        const { done, value } = await reader.read()
+        if (done) {
+          if (contentBuffer) {
+            fullContent += contentBuffer
+            updateContent(fullContent, true)
+          }
+          break
+        }
+
+        buffer += decoder.decode(value, { stream: true })
+        const chunks = buffer.split('\n')
+        buffer = chunks.pop() || ''
+
+        for (const chunk of chunks) {
+          if (chunk.startsWith('data: ')) {
+            const data = chunk.slice(6)
+            if (data === '[DONE]') break
+
+            try {
+              const json = JSON.parse(data)
+              const content = json.choices[0]?.delta?.content || ''
+              if (content) {
+                contentBuffer += content
+                
+                if (contentBuffer.length >= 100 || 
+                    contentBuffer.includes('\n\n') || 
+                    contentBuffer.includes('## ') || 
+                    contentBuffer.includes('# ')) {
+                  fullContent += contentBuffer
+                  setStreamContent(fullContent)
+                  contentBuffer = ""
+                }
+              }
+            } catch (e) {
+              console.error('Error parsing SSE message:', e)
+            }
+          }
+        }
+      }
+
+      const newVersion = promptHistory.length + 1
+      const newPrompt = {
+        content: fullContent,
+        originalPrompt: editedContent,
+        version: newVersion,
+        feedback: feedback
+      }
+
+      const newHistory = [...promptHistory, newPrompt]
+      setPromptHistory(newHistory)
+      setCurrentVersion(newVersion)
+      // 自动滚动到最新版本
+      setStartVersion(Math.max(1, newVersion - VISIBLE_VERSIONS + 1))
+      
+      localStorage.setItem('optimizedPrompt', JSON.stringify(newPrompt))
+      localStorage.setItem('optimizedPromptHistory', JSON.stringify(newHistory))
+
+    } catch (error) {
+      console.error(error)
+      toast({
+        variant: "destructive",
+        title: "迭代失败",
+        description: error instanceof Error ? error.message : "未知错误"
+      })
+    } finally {
+      setIsIterating(false)
+    }
+  }
+
+  const handleVersionChange = (version: number) => {
+    const prompt = promptHistory[version - 1]
+    if (prompt) {
+      setCurrentVersion(version)
+      setEditedContent(prompt.content)
+    }
   }
 
   return (
@@ -238,103 +682,83 @@ ${feedback}
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:gap-8">
               {/* Optimized Prompt */}
-              <div className="flex flex-col h-full">
+              <div className="flex flex-col h-full optimized-prompt-section">
                 <div className="flex-1 bg-blue-50 rounded-2xl sm:rounded-3xl p-6 sm:p-8 space-y-4 shadow-lg border border-blue-100">
-                  <div className="flex items-center justify-between mb-4 sm:mb-6">
-                    <h2 className="text-xl sm:text-2xl font-semibold text-blue-800">优化后Prompt</h2>
-                    <div className="flex items-center gap-2 sm:gap-3">
-                      {promptHistory.map((_, index) => {
-                        const num = index + 1
-                        return (
-                          <button
-                            key={num}
-                            onClick={() => {
-                              setCurrentVersion(num)
-                            }}
-                            className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full border-2 flex items-center justify-center text-base sm:text-lg
-                              ${currentVersion === num
-                                ? 'bg-blue-500 text-white border-blue-600' 
-                                : 'bg-white text-blue-500 border-blue-300 hover:bg-blue-50'
+                  <div className="flex justify-between items-center mb-4 sm:mb-6">
+                    <h2 className="text-xl sm:text-2xl font-semibold text-blue-800">
+                      {isIterating ? "正在优化..." : "优化后Prompt"}
+                    </h2>
+                    {promptHistory.length > 1 && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm text-blue-600">版本:</span>
+                        <div className="flex items-center gap-1">
+                          {/* 向前滑动按钮 */}
+                          {startVersion > 1 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setStartVersion(v => Math.max(1, v - 1))}
+                              className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50"
+                            >
+                              ←
+                            </Button>
+                          )}
+                          
+                          {/* 版本按钮 */}
+                          {getVisibleVersions().map(version => (
+                            <Button
+                              key={version}
+                              variant={currentVersion === version ? "default" : "outline"}
+                              size="sm"
+                              onClick={() => handleVersionChange(version)}
+                              className={`min-w-[32px] h-8 px-2 ${
+                                currentVersion === version 
+                                  ? "bg-blue-600 text-white" 
+                                  : "text-blue-600 hover:bg-blue-50"
                               }`}
-                          >
-                            {num}
-                          </button>
-                        )
-                      })}
-                      <ArrowRightIcon className="w-5 h-5 sm:w-6 sm:h-6 text-blue-500 ml-1 sm:ml-2" />
+                            >
+                              {version}
+                            </Button>
+                          ))}
+
+                          {/* 向后滑动按钮 */}
+                          {startVersion + VISIBLE_VERSIONS <= promptHistory.length && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setStartVersion(v => v + 1)}
+                              className="h-8 w-8 p-0 text-blue-600 hover:bg-blue-50"
+                            >
+                              →
+                            </Button>
+                          )}
+                        </div>
                     </div>
+                    )}
                   </div>
                   <Textarea
-                    className="h-[450px] resize-none bg-white border-2 border-blue-100 rounded-xl sm:rounded-2xl focus:ring-2 focus:ring-blue-400 focus:border-transparent text-base sm:text-lg p-4 font-mono"
-                    value={editedContent || prompt.content}
+                    className="h-[450px] resize-none bg-white border-2 border-blue-100 rounded-xl sm:rounded-2xl focus:ring-2 focus:ring-blue-400 focus:border-transparent text-base sm:text-lg p-4"
+                    value={editedContent}
                     onChange={(e) => setEditedContent(e.target.value)}
+                    placeholder="优化后的prompt将在这里显示..."
                   />
                 </div>
-                <div className="flex gap-4 mt-4">
+                <div className="mt-4 flex gap-4">
                   <Button 
                     variant="outline" 
                     className="flex-1 h-12 sm:h-16 px-6 sm:px-8 text-base sm:text-lg rounded-xl sm:rounded-2xl bg-white hover:bg-blue-50 text-blue-600 border-blue-200 hover:border-blue-400 flex items-center justify-center space-x-3 transition-all duration-300 ease-in-out transform hover:scale-105"
-                    onClick={async () => {
-                      if (editedContent && editedContent !== prompt.content) {
-                        const newHistory = [...promptHistory]
-                        newHistory[currentVersion - 1] = {
-                          ...prompt,
-                          content: editedContent
-                        }
-                        setPromptHistory(newHistory)
-                        localStorage.setItem('optimizedPromptHistory', JSON.stringify(newHistory))
-                        setEditedContent("")
-                        
-                        toast({
-                          title: "保存成功",
-                          description: "已保存修改的内容"
-                        })
-                      } else {
-                        const success = await copyToClipboard(prompt.content)
-                        if (success) {
-                          toast({
-                            title: "复制成功",
-                            description: "提示词已复制到剪贴板"
-                          })
-                        } else {
-                          toast({
-                            title: "复制失败",
-                            description: "请手动复制文本",
-                            variant: "destructive"
-                          })
-                        }
-                      }
-                    }}
+                    onClick={handleCopy}
                   >
-                    {editedContent && editedContent !== prompt.content ? (
-                      <>
-                        <Check className="w-5 h-5 sm:w-6 sm:h-6" />
-                        <span>保存</span>
-                      </>
-                    ) : (
-                      <>
                         <CopyIcon className="w-5 h-5 sm:w-6 sm:h-6" />
                         <span>复制</span>
-                      </>
-                    )}
                   </Button>
                   <Button 
                     variant="outline"
-                    className="flex-1 h-12 sm:h-16 px-6 sm:px-8 text-base sm:text-lg rounded-xl sm:rounded-2xl bg-white hover:bg-green-50 text-green-600 border-green-200 hover:border-green-400 flex items-center justify-center space-x-3 transition-all duration-300 ease-in-out transform hover:scale-105"
+                    className="flex-1 h-12 sm:h-16 px-6 sm:px-8 text-base sm:text-lg rounded-xl sm:rounded-2xl bg-white hover:bg-blue-50 text-blue-600 border-blue-200 hover:border-blue-400 flex items-center justify-center space-x-3 transition-all duration-300 ease-in-out transform hover:scale-105"
                     onClick={() => setIsIterateDialogOpen(true)}
-                    disabled={isIterating || Boolean(editedContent && editedContent !== prompt.content)}
                   >
-                    {isIterating ? (
-                      <>
-                        <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" />
-                        <span>处理中...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-5 h-5 sm:w-6 sm:h-6" />
+                    <ArrowRightIcon className="w-5 h-5 sm:w-6 sm:h-6" />
                         <span>迭代</span>
-                      </>
-                    )}
                   </Button>
                 </div>
               </div>
@@ -363,19 +787,19 @@ ${feedback}
                 <div className="mt-4 flex items-center gap-4">
                   <Button 
                     variant="outline"
-                    className="flex-1 h-12 sm:h-16 px-6 sm:px-8 text-base sm:text-lg rounded-xl sm:rounded-2xl bg-white hover:bg-purple-50 text-purple-600 border-purple-200 hover:border-purple-400 flex items-center justify-center space-x-3 transition-all duration-300 ease-in-out transform hover:scale-105"
+                    className="flex-1 h-12 sm:h-16 px-6 sm:px-8 text-base sm:text-lg rounded-xl sm:rounded-2xl bg-white hover:bg-blue-50 text-blue-600 border-blue-200 hover:border-blue-400 flex items-center justify-center space-x-3 transition-all duration-300 ease-in-out transform hover:scale-105"
                     onClick={handleTest}
-                    disabled={isLoading || !testInput.trim()}
+                    disabled={isLoading}
                   >
                     {isLoading ? (
                       <>
-                        <Loader2 className="w-5 h-5 sm:w-6 sm:h-6 animate-spin" />
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                         <span>处理中...</span>
                       </>
                     ) : (
                       <>
                         <Play className="w-5 h-5 sm:w-6 sm:h-6" />
-                        <span>测试效果</span>
+                        <span>测试</span>
                       </>
                     )}
                   </Button>
@@ -428,4 +852,4 @@ ${feedback}
       />
     </>
   )
-} 
+}
